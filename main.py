@@ -24,6 +24,7 @@ def init_db() -> None:
             """
             CREATE TABLE IF NOT EXISTS auth_ids (
                 id TEXT PRIMARY KEY,
+                customer_id TEXT,
                 label TEXT,
                 is_active INTEGER NOT NULL,
                 created_at TEXT NOT NULL
@@ -31,14 +32,24 @@ def init_db() -> None:
             """
         )
 
+        # Ensure legacy databases receive the new customer_id column
+        columns = {
+            row[1] for row in conn.execute("PRAGMA table_info(auth_ids)").fetchall()
+        }
+        if "customer_id" not in columns:
+            conn.execute("ALTER TABLE auth_ids ADD COLUMN customer_id TEXT")
 
-def create_auth_id(label: Optional[str]) -> str:
+
+def create_auth_id(customer_id: str, label: Optional[str]) -> str:
     auth_id = secrets.token_urlsafe(32)
     created_at = datetime.utcnow().isoformat() + "Z"
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute(
-            "INSERT INTO auth_ids (id, label, is_active, created_at) VALUES (?, ?, ?, ?)",
-            (auth_id, label, 1, created_at),
+            """
+            INSERT INTO auth_ids (id, customer_id, label, is_active, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (auth_id, customer_id, label, 1, created_at),
         )
     return auth_id
 
@@ -47,7 +58,11 @@ def list_auth_ids() -> List[sqlite3.Row]:
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
-            "SELECT id, label, is_active, created_at FROM auth_ids ORDER BY created_at DESC"
+            """
+            SELECT id, customer_id, label, is_active, created_at
+            FROM auth_ids
+            ORDER BY created_at DESC
+            """
         ).fetchall()
     return rows
 
@@ -56,7 +71,11 @@ def get_auth_id(auth_id: str) -> Optional[sqlite3.Row]:
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
         row = conn.execute(
-            "SELECT id, label, is_active, created_at FROM auth_ids WHERE id = ?",
+            """
+            SELECT id, customer_id, label, is_active, created_at
+            FROM auth_ids
+            WHERE id = ?
+            """,
             (auth_id,),
         ).fetchone()
     return row
@@ -82,12 +101,14 @@ def is_auth_id_valid(auth_id: str) -> bool:
 
 class AuthIdResponse(BaseModel):
     auth_id: str
+    customer_id: Optional[str]
     label: Optional[str]
     is_active: bool
     created_at: str
 
 
 class CreateAuthIdRequest(BaseModel):
+    customer_id: str = Field(..., min_length=1)
     label: Optional[str] = None
 
 
@@ -100,8 +121,16 @@ class VerifyResponse(BaseModel):
 
 
 def row_to_auth_response(row: sqlite3.Row) -> AuthIdResponse:
+    customer_id = None
+    if hasattr(row, "keys"):
+        keys = row.keys()
+        if "customer_id" in keys:
+            customer_id = row["customer_id"]
+    elif isinstance(row, (tuple, list)) and len(row) > 1:
+        customer_id = row[1]
     return AuthIdResponse(
         auth_id=row["id"],
+        customer_id=customer_id,
         label=row["label"],
         is_active=bool(row["is_active"]),
         created_at=row["created_at"],
@@ -132,7 +161,7 @@ def healthz() -> dict:
 
 @app.post("/auth-ids", response_model=AuthIdResponse)
 def issue_auth_id(payload: CreateAuthIdRequest) -> AuthIdResponse:
-    auth_id = create_auth_id(payload.label)
+    auth_id = create_auth_id(payload.customer_id, payload.label)
     row = get_auth_id(auth_id)
     return row_to_auth_response(row)
 

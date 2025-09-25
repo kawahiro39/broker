@@ -1,6 +1,6 @@
 # Broker API Guide
 
-このサービスは FastAPI で実装された認証 ID 管理 API です。Bubble などのノーコードアプリから認証 ID を取得し、Cloud Run 上の保護対象 API にリクエストする際のヘッダー認証に利用できます。
+このサービスは FastAPI で実装された認証 ID 管理 API です。Bubble などのノーコードアプリから認証 ID を取得し、Cloud Run 上の保護対象 API にリクエストする際のヘッダー認証に利用できます。発行された ID には対応する顧客 ID と有効 / 無効の状態が保存されます。
 
 ## セットアップ
 
@@ -29,7 +29,7 @@
 | メソッド / パス | 説明 | リクエスト例 | 成功時レスポンス |
 | ---------------- | ---- | ------------ | ---------------- |
 | `GET /healthz` | ヘルスチェック | なし | `{ "ok": true }` |
-| `POST /auth-ids` | 認証 ID の新規発行 | `{"label": "bubble-client"}` | `{"auth_id": "...", "label": "bubble-client", "is_active": true, "created_at": "..."}` |
+| `POST /auth-ids` | 認証 ID の新規発行 | `{"customer_id": "customer-123", "label": "bubble-client"}` | `{"auth_id": "...", "customer_id": "customer-123", "label": "bubble-client", "is_active": true, "created_at": "..."}` |
 | `GET /auth-ids` | 認証 ID の一覧取得 | なし | `[{...}, ...]` |
 | `GET /auth-ids/{auth_id}` | 認証 ID の単体取得 | なし | `{...}` |
 | `POST /auth-ids/{auth_id}/enable` | 認証 ID を有効化 | なし | `{...}` |
@@ -39,7 +39,7 @@
 ## Bubble 連携例
 
 1. Bubble から認証 ID 管理画面を作成し、`POST /auth-ids` を呼び出して ID を取得します。
-2. 取得した `auth_id` を Cloud Run アプリにリクエストする際のカスタムヘッダー（例: `X-Broker-Auth-ID`）に設定します。
+2. 取得した `auth_id` と紐づく `customer_id` を Cloud Run アプリにリクエストする際のカスタムヘッダー（例: `X-Broker-Auth-ID`）に設定します。
 3. Cloud Run 側では受け取ったヘッダーを `POST /auth-ids/verify` に渡し、`is_valid` が `true` の場合にのみ処理を継続します。
 4. 利用停止が必要になった場合は Bubble から `POST /auth-ids/{auth_id}/disable`、再開する場合は `POST /auth-ids/{auth_id}/enable` を呼び出します。
 
