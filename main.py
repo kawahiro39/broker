@@ -6,12 +6,12 @@ from typing import List, Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 DB_PATH = os.getenv("AUTH_DB_PATH", "auth_ids.db")
 ALLOWED_ORIGINS = list(
-    filter(None, (os.getenv("ALLOWED_ORIGINS", "").split(",")))
+    filter(None, (origin.strip() for origin in os.getenv("ALLOWED_ORIGINS", "").split(",")))
 )
 
 
@@ -92,7 +92,7 @@ class CreateAuthIdRequest(BaseModel):
 
 
 class VerifyRequest(BaseModel):
-    auth_id: str
+    auth_id: str = Field(..., min_length=1)
 
 
 class VerifyResponse(BaseModel):
@@ -114,8 +114,9 @@ if ALLOWED_ORIGINS:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=ALLOWED_ORIGINS,
-        allow_methods=["GET", "POST"],
-        allow_headers=["*"]
+        allow_methods=["*"],
+        allow_headers=["*"],
+        allow_credentials=False,
     )
 
 
