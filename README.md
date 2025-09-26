@@ -33,6 +33,7 @@ export DATABASE_URL="postgresql://<user>:<password>@<proxy_host>:5432/<database>
 
 パブリック IP を利用する場合は、接続先の IP アドレスと作成したユーザー／データベース名を用いて接続文字列を組み立てます。
 
+
 ## CORS 設定について
 
 `ALLOWED_ORIGINS` を指定すると該当オリジンからのブラウザアクセスが許可されます。プリフライトリクエストにも対応しているため、Bubble から `POST` で JSON ボディを送るケースでも利用できます。
