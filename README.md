@@ -12,9 +12,10 @@
 
    | 変数名 | 説明 | 既定値 |
    | ------ | ---- | ------ |
-| `DATABASE_URL` | PostgreSQL への接続文字列。例: `postgresql://postgres:<password>@<host>:5432/<database>` | `postgresql://postgres:#Hiro22199@34.180.84.255:5432/postgres` |
-   | `DB_POOL_MIN_SIZE` | 接続プールの初期コネクション数。 | `1` |
-   | `DB_POOL_MAX_SIZE` | 接続プールの最大コネクション数。 | `5` |
+| `DATABASE_URL` | Cloud SQL などの PostgreSQL への接続文字列。例: `postgresql://postgres:<password>@<host>:5432/<database>` | （未設定） |
+   | `DB_POOL_MIN_SIZE` | PostgreSQL 利用時の接続プール初期コネクション数。 | `1` |
+   | `DB_POOL_MAX_SIZE` | PostgreSQL 利用時の接続プール最大コネクション数。 | `5` |
+   | `AUTH_DB_PATH` | PostgreSQL を指定しない場合に利用する SQLite ファイルのパス。 | `auth_ids.db` |
    | `ALLOWED_ORIGINS` | CORS を許可するオリジン。カンマ区切りで指定します。Bubble のアプリドメインなどを設定してください。 | （未設定） |
 
 3. API サーバーを起動します。
@@ -25,14 +26,13 @@
 ### Cloud SQL (PostgreSQL) との接続例
 
 Cloud SQL のインスタンスに接続する場合は、Cloud SQL Auth Proxy または Cloud Run の Cloud SQL コネクタを利用してネットワークを確立した上で、
-既定で組み込まれている `postgresql://postgres:#Hiro22199@34.180.84.255:5432/postgres` を利用するか、`DATABASE_URL` を以下の形式で上書き指定します。
+`DATABASE_URL` を以下の形式で設定します。
 
 ```bash
 export DATABASE_URL="postgresql://<user>:<password>@<proxy_host>:5432/<database>"
 ```
 
-パブリック IP を利用する場合は、接続先の IP アドレスと作成したユーザー／データベース名を用いて接続文字列を組み立てます。
-
+パブリック IP を利用する場合は、接続先の IP アドレスと作成したユーザー／データベース名を用いて接続文字列を組み立てます。Cloud Run から直接アクセスする場合は、Cloud SQL Auth Proxy のデプロイや Cloud SQL コネクタの設定など、ネットワーク経路の確立が必要です。
 
 ## CORS 設定について
 
@@ -66,4 +66,4 @@ python -m compileall main.py
 ## 備考
 
 - 認証 ID には有効期限はありません。無効化 API を利用して手動で制御してください。
-- すべての認証 ID は PostgreSQL に保存されるため、Cloud Run の再起動やスケールアウトを行ってもレコードは保持されます。
+- `DATABASE_URL` を設定すると認証 ID は PostgreSQL に保存され、Cloud Run の再起動やスケールアウトを行ってもレコードは保持されます。環境変数を設定しない場合はローカルの SQLite ファイルに保存されるため、Cloud Run の再デプロイ時などに消失します。
