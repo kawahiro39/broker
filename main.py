@@ -67,6 +67,12 @@ def init_db() -> None:
         )
         conn.commit()
 
+        # Ensure legacy databases receive the new customer_id column
+        columns = {
+            row[1] for row in conn.execute("PRAGMA table_info(auth_ids)").fetchall()
+        }
+        if "customer_id" not in columns:
+            conn.execute("ALTER TABLE auth_ids ADD COLUMN customer_id TEXT")
 
 def create_auth_id(customer_id: str, label: Optional[str]) -> str:
     auth_id = secrets.token_urlsafe(32)
