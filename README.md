@@ -12,13 +12,26 @@
 
    | 変数名 | 説明 | 既定値 |
    | ------ | ---- | ------ |
-   | `AUTH_DB_PATH` | 認証 ID を保持する SQLite ファイルのパス。存在しないディレクトリは自動作成されます。 | `auth_ids.db` |
+   | `DATABASE_URL` | PostgreSQL への接続文字列。例: `postgresql://postgres:<password>@<host>:5432/<database>` | （必須） |
+   | `DB_POOL_MIN_SIZE` | 接続プールの初期コネクション数。 | `1` |
+   | `DB_POOL_MAX_SIZE` | 接続プールの最大コネクション数。 | `5` |
    | `ALLOWED_ORIGINS` | CORS を許可するオリジン。カンマ区切りで指定します。Bubble のアプリドメインなどを設定してください。 | （未設定） |
 
 3. API サーバーを起動します。
    ```bash
    uvicorn main:app --host 0.0.0.0 --port 8080
    ```
+
+### Cloud SQL (PostgreSQL) との接続例
+
+Cloud SQL のインスタンスに接続する場合は、Cloud SQL Auth Proxy または Cloud Run の Cloud SQL コネクタを利用してネットワークを確立した上で、
+`DATABASE_URL` を次の形式で指定します。
+
+```bash
+export DATABASE_URL="postgresql://<user>:<password>@<proxy_host>:5432/<database>"
+```
+
+パブリック IP を利用する場合は、Cloud SQL インスタンスの IP アドレス（例: `34.180.84.255`）と作成したユーザー／データベース名を用いて接続文字列を組み立ててください。パスワードや接続名などの認証情報は Secret Manager 等で安全に管理し、直接ソースコードに書き込まないようにします。
 
 ## CORS 設定について
 
@@ -52,4 +65,4 @@ python -m compileall main.py
 ## 備考
 
 - 認証 ID には有効期限はありません。無効化 API を利用して手動で制御してください。
-- SQLite を利用しているため、単一インスタンスでの運用を想定しています。複数インスタンスで利用する場合は Cloud SQL などの共有データベースへ移行してください。
+- すべての認証 ID は PostgreSQL に保存されるため、Cloud Run の再起動やスケールアウトを行ってもレコードは保持されます。
