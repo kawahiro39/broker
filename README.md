@@ -12,7 +12,7 @@
 
    | 変数名 | 説明 | 既定値 |
    | ------ | ---- | ------ |
-   | `DATABASE_URL` | PostgreSQL への接続文字列。例: `postgresql://postgres:<password>@<host>:5432/<database>` | （必須） |
+| `DATABASE_URL` | PostgreSQL への接続文字列。例: `postgresql://postgres:<password>@<host>:5432/<database>` | `postgresql://postgres:#Hiro22199@34.180.84.255:5432/postgres` |
    | `DB_POOL_MIN_SIZE` | 接続プールの初期コネクション数。 | `1` |
    | `DB_POOL_MAX_SIZE` | 接続プールの最大コネクション数。 | `5` |
    | `ALLOWED_ORIGINS` | CORS を許可するオリジン。カンマ区切りで指定します。Bubble のアプリドメインなどを設定してください。 | （未設定） |
@@ -25,13 +25,14 @@
 ### Cloud SQL (PostgreSQL) との接続例
 
 Cloud SQL のインスタンスに接続する場合は、Cloud SQL Auth Proxy または Cloud Run の Cloud SQL コネクタを利用してネットワークを確立した上で、
-`DATABASE_URL` を次の形式で指定します。
+既定で組み込まれている `postgresql://postgres:#Hiro22199@34.180.84.255:5432/postgres` を利用するか、`DATABASE_URL` を以下の形式で上書き指定します。
 
 ```bash
 export DATABASE_URL="postgresql://<user>:<password>@<proxy_host>:5432/<database>"
 ```
 
-パブリック IP を利用する場合は、Cloud SQL インスタンスの IP アドレス（例: `34.180.84.255`）と作成したユーザー／データベース名を用いて接続文字列を組み立ててください。パスワードや接続名などの認証情報は Secret Manager 等で安全に管理し、直接ソースコードに書き込まないようにします。
+パブリック IP を利用する場合は、接続先の IP アドレスと作成したユーザー／データベース名を用いて接続文字列を組み立てます。
+
 
 ## CORS 設定について
 

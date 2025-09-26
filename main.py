@@ -12,7 +12,10 @@ from psycopg import Connection
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 
-DATABASE_URL = os.getenv("DATABASE_URL")
+DEFAULT_DATABASE_URL = (
+    "postgresql://postgres:#Hiro22199@34.180.84.255:5432/postgres"
+)
+DATABASE_URL = os.getenv("DATABASE_URL") or DEFAULT_DATABASE_URL
 POOL_MIN_SIZE = int(os.getenv("DB_POOL_MIN_SIZE", "1"))
 POOL_MAX_SIZE = int(os.getenv("DB_POOL_MAX_SIZE", "5"))
 ALLOWED_ORIGINS = list(
