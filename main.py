@@ -1,80 +1,131 @@
 import os
 import secrets
-import sqlite3
-from datetime import datetime
-from typing import List, Optional
+from contextlib import contextmanager
+from datetime import datetime, timezone
+from typing import Any, Generator, List, Mapping, Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
+from psycopg import Connection
+from psycopg.rows import dict_row
+from psycopg_pool import ConnectionPool
 
-DB_PATH = os.getenv("AUTH_DB_PATH", "auth_ids.db")
+DATABASE_URL = os.getenv("DATABASE_URL")
+POOL_MIN_SIZE = int(os.getenv("DB_POOL_MIN_SIZE", "1"))
+POOL_MAX_SIZE = int(os.getenv("DB_POOL_MAX_SIZE", "5"))
 ALLOWED_ORIGINS = list(
     filter(None, (origin.strip() for origin in os.getenv("ALLOWED_ORIGINS", "").split(",")))
 )
 
 
+if not DATABASE_URL:
+    raise RuntimeError(
+        "DATABASE_URL environment variable is required to persist auth IDs in PostgreSQL."
+    )
+
+
+connection_pool: Optional[ConnectionPool] = None
+
+
+def get_connection_pool() -> ConnectionPool:
+    global connection_pool
+    if connection_pool is None:
+        connection_pool = ConnectionPool(
+            conninfo=DATABASE_URL,
+            min_size=POOL_MIN_SIZE,
+            max_size=POOL_MAX_SIZE,
+        )
+    return connection_pool
+
+
+@contextmanager
+def get_cursor() -> Generator[tuple[Connection, Any], None, None]:
+    pool = get_connection_pool()
+    with pool.connection() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            try:
+                yield conn, cur
+            except Exception:
+                conn.rollback()
+                raise
+
+
 def init_db() -> None:
-    directory = os.path.dirname(DB_PATH)
-    if directory:
-        os.makedirs(directory, exist_ok=True)
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.execute(
+    with get_cursor() as (conn, cur):
+        cur.execute(
             """
             CREATE TABLE IF NOT EXISTS auth_ids (
                 id TEXT PRIMARY KEY,
+                customer_id TEXT,
                 label TEXT,
-                is_active INTEGER NOT NULL,
-                created_at TEXT NOT NULL
+                is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             )
             """
         )
+        conn.commit()
 
 
-def create_auth_id(label: Optional[str]) -> str:
+def create_auth_id(customer_id: str, label: Optional[str]) -> str:
     auth_id = secrets.token_urlsafe(32)
-    created_at = datetime.utcnow().isoformat() + "Z"
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.execute(
-            "INSERT INTO auth_ids (id, label, is_active, created_at) VALUES (?, ?, ?, ?)",
-            (auth_id, label, 1, created_at),
+    created_at = datetime.now(timezone.utc)
+    with get_cursor() as (conn, cur):
+        cur.execute(
+            """
+            INSERT INTO auth_ids (id, customer_id, label, is_active, created_at)
+            VALUES (%s, %s, %s, %s, %s)
+            ON CONFLICT (id) DO NOTHING
+            """,
+            (auth_id, customer_id, label, True, created_at),
         )
+        conn.commit()
     return auth_id
 
 
-def list_auth_ids() -> List[sqlite3.Row]:
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.row_factory = sqlite3.Row
-        rows = conn.execute(
-            "SELECT id, label, is_active, created_at FROM auth_ids ORDER BY created_at DESC"
-        ).fetchall()
+def list_auth_ids() -> List[Mapping[str, Any]]:
+    with get_cursor() as (conn, cur):
+        cur.execute(
+            """
+            SELECT id, customer_id, label, is_active, created_at
+            FROM auth_ids
+            ORDER BY created_at DESC
+            """
+        )
+        rows = cur.fetchall()
     return rows
 
 
-def get_auth_id(auth_id: str) -> Optional[sqlite3.Row]:
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.row_factory = sqlite3.Row
-        row = conn.execute(
-            "SELECT id, label, is_active, created_at FROM auth_ids WHERE id = ?",
+def get_auth_id(auth_id: str) -> Optional[Mapping[str, Any]]:
+    with get_cursor() as (conn, cur):
+        cur.execute(
+            """
+            SELECT id, customer_id, label, is_active, created_at
+            FROM auth_ids
+            WHERE id = %s
+            """,
             (auth_id,),
-        ).fetchone()
+        )
+        row = cur.fetchone()
     return row
 
 
 def set_auth_id_status(auth_id: str, is_active: bool) -> bool:
-    with sqlite3.connect(DB_PATH) as conn:
-        cur = conn.execute(
-            "UPDATE auth_ids SET is_active = ? WHERE id = ?",
-            (1 if is_active else 0, auth_id),
+    with get_cursor() as (conn, cur):
+        cur.execute(
+            "UPDATE auth_ids SET is_active = %s WHERE id = %s",
+            (is_active, auth_id),
         )
-        return cur.rowcount > 0
+        updated = cur.rowcount > 0
+        conn.commit()
+        return updated
 
 
 def is_auth_id_valid(auth_id: str) -> bool:
-    with sqlite3.connect(DB_PATH) as conn:
-        cur = conn.execute(
-            "SELECT 1 FROM auth_ids WHERE id = ? AND is_active = 1",
+    with get_cursor() as (_, cur):
+        cur.execute(
+            "SELECT 1 FROM auth_ids WHERE id = %s AND is_active = TRUE",
             (auth_id,),
         )
         return cur.fetchone() is not None
@@ -82,12 +133,14 @@ def is_auth_id_valid(auth_id: str) -> bool:
 
 class AuthIdResponse(BaseModel):
     auth_id: str
+    customer_id: Optional[str]
     label: Optional[str]
     is_active: bool
     created_at: str
 
 
 class CreateAuthIdRequest(BaseModel):
+    customer_id: str = Field(..., min_length=1)
     label: Optional[str] = None
 
 
@@ -99,12 +152,21 @@ class VerifyResponse(BaseModel):
     is_valid: bool
 
 
-def row_to_auth_response(row: sqlite3.Row) -> AuthIdResponse:
+def to_utc_isoformat(value: Any) -> str:
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    return str(value)
+
+
+def row_to_auth_response(row: Mapping[str, Any]) -> AuthIdResponse:
     return AuthIdResponse(
         auth_id=row["id"],
-        label=row["label"],
+        customer_id=row.get("customer_id"),
+        label=row.get("label"),
         is_active=bool(row["is_active"]),
-        created_at=row["created_at"],
+        created_at=to_utc_isoformat(row["created_at"]),
     )
 
 
@@ -132,7 +194,7 @@ def healthz() -> dict:
 
 @app.post("/auth-ids", response_model=AuthIdResponse)
 def issue_auth_id(payload: CreateAuthIdRequest) -> AuthIdResponse:
-    auth_id = create_auth_id(payload.label)
+    auth_id = create_auth_id(payload.customer_id, payload.label)
     row = get_auth_id(auth_id)
     return row_to_auth_response(row)
 
